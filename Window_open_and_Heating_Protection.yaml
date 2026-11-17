@@ -1,0 +1,251 @@
+blueprint:
+  name: Window open and Heating Protection
+  description: >
+    # Window open and Heating Protection
+  
+    **Version: 0.9**
+    
+  
+    Turns off thermostat(s) when a window is opened or tilted and restores their
+    previous settings once the window is fully closed again. Optionally sends a
+    notification if the window stays open while it is cold outside.
+    
+  domain: automation
+  author: Stefan Altenbuchner + ChatGPT & Claude - 17-11-2026
+  homeassistant:
+    min_version: 2024.10.0
+  input:
+    sensors:
+      name: Sensors
+      icon: mdi:window-open-variant
+      collapsed: false
+      input:
+        door_sensor:
+          name: Window open sensor
+          description: Binary sensor that is "on" when the window is open.
+          selector:
+            entity:
+              domain: binary_sensor
+        tilt_sensor:
+          name: Window tilt sensor
+          description: Binary sensor that is "on" when the window is tilted.
+          selector:
+            entity:
+              domain: binary_sensor
+        outdoor_sensor:
+          name: Outdoor temperature sensor
+          selector:
+            entity:
+              domain: sensor
+              device_class: temperature
+    thermostat:
+      name: Thermostat
+      icon: mdi:radiator
+      collapsed: false
+      input:
+        climate_entities:
+          name: Thermostat(s)
+          description: Climate entities to switch off while the window is open.
+          selector:
+            entity:
+              domain: climate
+              multiple: true
+        scene_id:
+          name: Snapshot scene ID
+          description: >
+            Unique ID (no "scene." prefix) for the temporary scene that stores
+            the thermostat state. Use a different ID for each automation
+            created from this blueprint.
+          default: window_heating_snapshot
+          selector:
+            text:
+    notification:
+      name: Cold weather notification
+      icon: mdi:bell-alert
+      collapsed: true
+      input:
+        notify_devices:
+          name: Notify services
+          description: >
+            One or more notify service names WITHOUT the "notify." prefix, for
+            example mobile_app_oneplus_15. Find them in Developer tools →
+            Actions by searching for "notify.".
+          selector:
+            text:
+              multiple: true
+        cold_threshold:
+          name: Cold threshold
+          description: Notify only when the outdoor temperature is below this value.
+          default: 10
+          selector:
+            number:
+              min: -30
+              max: 30
+              step: 0.5
+              unit_of_measurement: °C
+              mode: box
+        cold_duration:
+          name: Duration before notifying
+          description: How long the window must stay open in the cold before notifying.
+          default: 120
+          selector:
+            number:
+              min: 1
+              max: 720
+              unit_of_measurement: min
+              mode: box
+        notify_title:
+          name: Notification title
+          default: Cold weather warning
+          selector:
+            text:
+        notify_message:
+          name: Notification message
+          description: The outdoor temperature is appended automatically.
+          default: The window is still open or tilted. Please close it.
+          selector:
+            text:
+        second_notify_delay:
+          name: Delay before second notification
+          description: >
+            Minutes after the first notification. If the window is still open
+            by then, a second notification is sent. Set to 0 to disable.
+          default: 60
+          selector:
+            number:
+              min: 0
+              max: 720
+              unit_of_measurement: min
+              mode: box
+        second_notify_title:
+          name: Second notification title
+          default: Window still open
+          selector:
+            text:
+        second_notify_message:
+          name: Second notification message
+          description: The outdoor temperature is appended automatically.
+          default: The window is STILL open or tilted. Please close it now.
+          selector:
+            text:
+
+mode: restart
+
+variables:
+  door_sensor: !input door_sensor
+  tilt_sensor: !input tilt_sensor
+  outdoor_sensor: !input outdoor_sensor
+  climate_entities: !input climate_entities
+  scene_id: !input scene_id
+  scene_entity: "scene.{{ scene_id }}"
+  cold_threshold: !input cold_threshold
+  cold_duration: !input cold_duration
+  notify_message: !input notify_message
+  second_notify_delay: !input second_notify_delay
+  second_notify_message: !input second_notify_message
+
+triggers:
+  - trigger: state
+    entity_id: !input door_sensor
+    to: "on"
+    id: window_opened
+  - trigger: state
+    entity_id: !input tilt_sensor
+    to: "on"
+    id: window_tilted
+  - trigger: state
+    entity_id:
+      - !input door_sensor
+      - !input tilt_sensor
+    to: "off"
+    id: window_closed
+  - trigger: numeric_state
+    entity_id: !input outdoor_sensor
+    below: !input cold_threshold
+    id: cold
+
+actions:
+  - choose:
+      # Window opened or tilted: snapshot (once) and switch the heating off
+      - conditions:
+          - condition: trigger
+            id:
+              - window_opened
+              - window_tilted
+        sequence:
+          - if:
+              - condition: template
+                value_template: >
+                  {{ scene_entity not in states.scene | map(attribute='entity_id') | list }}
+            then:
+              - action: scene.create
+                data:
+                  scene_id: "{{ scene_id }}"
+                  snapshot_entities: !input climate_entities
+          - action: climate.turn_off
+            target:
+              entity_id: !input climate_entities
+
+      # Window fully closed: restore the snapshot and remove it
+      - conditions:
+          - condition: trigger
+            id: window_closed
+          - condition: state
+            entity_id: !input door_sensor
+            state: "off"
+          - condition: state
+            entity_id: !input tilt_sensor
+            state: "off"
+          - condition: template
+            value_template: >
+              {{ scene_entity in states.scene | map(attribute='entity_id') | list }}
+        sequence:
+          - action: scene.turn_on
+            target:
+              entity_id: "{{ scene_entity }}"
+          - action: scene.delete
+            target:
+              entity_id: "{{ scene_entity }}"
+
+  # Cold weather notification: window open and cold -> wait, re-check, notify
+  - condition: template
+    value_template: >
+      {{ (is_state(door_sensor, 'on') or is_state(tilt_sensor, 'on'))
+         and (states(outdoor_sensor) | float(99)) < (cold_threshold | float) }}
+  - wait_template: >
+      {{ not ((is_state(door_sensor, 'on') or is_state(tilt_sensor, 'on'))
+         and (states(outdoor_sensor) | float(99)) < (cold_threshold | float)) }}
+    timeout: "{{ (cold_duration | int) * 60 }}"
+    continue_on_timeout: true
+  - condition: template
+    value_template: "{{ not wait.completed }}"
+  - alias: Send cold weather warning
+    repeat:
+      for_each: !input notify_devices
+      sequence:
+        - action: "notify.{{ repeat.item }}"
+          data:
+            title: !input notify_title
+            message: >
+              {{ notify_message }} Outdoor temperature: {{ states(outdoor_sensor) }} °C.
+              The window has been open for at least {{ cold_duration | int }} minutes.
+
+  # Second notification: window still not closed after the first one
+  - condition: template
+    value_template: "{{ (second_notify_delay | int) > 0 }}"
+  - wait_template: >
+      {{ not (is_state(door_sensor, 'on') or is_state(tilt_sensor, 'on')) }}
+    timeout: "{{ (second_notify_delay | int) * 60 }}"
+    continue_on_timeout: true
+  - condition: template
+    value_template: "{{ not wait.completed }}"
+  - alias: Send second warning
+    repeat:
+      for_each: !input notify_devices
+      sequence:
+        - action: "notify.{{ repeat.item }}"
+          data:
+            title: !input second_notify_title
+            message: >
+              {{ second_notify_message }} Outdoor temperature: {{ states(outdoor_sensor) }} °C.
+              The window has been open for {{ (cold_duration | int) + (second_notify_delay | int) }} minutes.
