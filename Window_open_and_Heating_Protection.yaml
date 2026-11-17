@@ -3,7 +3,7 @@ blueprint:
   description: >
     # Window open and Heating Protection
   
-    **Version: 0.9**
+    **Version: 0.10**
     
   
     Turns off thermostat(s) when a window is opened or tilted and restores their
@@ -65,13 +65,11 @@ blueprint:
       collapsed: true
       input:
         notify_devices:
-          name: Notify services
-          description: >
-            One or more notify service names WITHOUT the "notify." prefix, for
-            example mobile_app_oneplus_15. Find them in Developer tools →
-            Actions by searching for "notify.".
+          name: Notify devices
+          description: Mobile app devices that receive the warnings.
           selector:
-            text:
+            device:
+              integration: mobile_app
               multiple: true
         cold_threshold:
           name: Cold threshold
@@ -223,7 +221,7 @@ actions:
     repeat:
       for_each: !input notify_devices
       sequence:
-        - action: "notify.{{ repeat.item }}"
+        - action: "notify.mobile_app_{{ device_attr(repeat.item, 'name') | slugify }}"
           data:
             title: !input notify_title
             message: >
@@ -243,7 +241,7 @@ actions:
     repeat:
       for_each: !input notify_devices
       sequence:
-        - action: "notify.{{ repeat.item }}"
+        - action: "notify.mobile_app_{{ device_attr(repeat.item, 'name') | slugify }}"
           data:
             title: !input second_notify_title
             message: >
