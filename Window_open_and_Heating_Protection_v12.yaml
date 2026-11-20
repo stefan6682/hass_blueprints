@@ -3,7 +3,7 @@ blueprint:
   description: >
     # Window open and Heating Protection
   
-    **Version: 0.12**
+    **Version: 0.12.1**
     
     
     Turns off thermostat(s) when a window is opened or tilted and restores their
@@ -12,9 +12,8 @@ blueprint:
     outside, a notification is sent, followed by repeat reminders with action
     buttons (turn heating back on / snooze). Notifications are dismissed when
     the window closes.
-    
   domain: automation
-  author: Stefan Altenbuchner + ChatGPT & Claude - 18-11-2026
+  author: Stefan Altenbuchner + ChatGPT & Claude - 20-11-2026
   homeassistant:
     min_version: 2024.10.0
   input:
@@ -197,6 +196,7 @@ variables:
   tilt_sensor: !input tilt_sensor
   outdoor_sensor: !input outdoor_sensor
   scene_id: !input scene_id
+  climate_entities: !input climate_entities
   scene_entity: "scene.{{ scene_id }}"
   cold_threshold: !input cold_threshold
   cold_duration: !input cold_duration
@@ -254,15 +254,23 @@ actions:
               - window_opened
               - window_tilted
         sequence:
+          # Only remember thermostats that are currently on, so thermostats
+          # that were already off are never switched on again later
+          - variables:
+              entities_to_restore: >
+                {{ expand(climate_entities)
+                   | rejectattr('state', 'in', ['off', 'unavailable', 'unknown'])
+                   | map(attribute='entity_id') | list }}
           - if:
               - condition: template
                 value_template: >
-                  {{ scene_entity not in states.scene | map(attribute='entity_id') | list }}
+                  {{ scene_entity not in states.scene | map(attribute='entity_id') | list
+                     and entities_to_restore | length > 0 }}
             then:
               - action: scene.create
                 data:
                   scene_id: "{{ scene_id }}"
-                  snapshot_entities: !input climate_entities
+                  snapshot_entities: "{{ entities_to_restore }}"
           - action: climate.turn_off
             target:
               entity_id: !input climate_entities
