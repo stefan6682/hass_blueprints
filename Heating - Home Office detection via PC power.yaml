@@ -1,0 +1,112 @@
+blueprint:
+  name: Heating - Home Office detection via PC power
+  description: >
+    # Heating - Home Office detection via PC power
+    
+    **Version 0.2**
+    
+    Detects that a PC is in use (power draw stays above a threshold) and
+    raises the target temperature of one or more climate entities, but only
+    within a time window and only if the room's current setpoint is below a
+    limit.
+  domain: automation
+  author: Stefan Altenbuchner & Claude - 21.11.2026
+  input:
+    power_sensor:
+      name: PC power sensor
+      description: Power sensor (W) of the PC / workplace socket.
+      selector:
+        entity:
+          filter:
+            - domain: sensor
+              device_class: power
+    power_threshold:
+      name: Power threshold
+      description: The PC counts as "in use" when power stays above this value.
+      default: 100
+      selector:
+        number:
+          min: 1
+          max: 2000
+          step: 1
+          unit_of_measurement: W
+          mode: box
+    power_duration:
+      name: Duration above threshold
+      description: How long power must stay above the threshold before triggering.
+      default:
+        hours: 0
+        minutes: 0
+        seconds: 5
+      selector:
+        duration:
+    start_time:
+      name: Active from
+      default: "07:00:00"
+      selector:
+        time:
+    end_time:
+      name: Active until
+      default: "22:00:00"
+      selector:
+        time:
+    check_climate:
+      name: Climate entity to check
+      description: >
+        Only act if this entity's setpoint (temperature attribute) is below
+        the limit below.
+      selector:
+        entity:
+          domain: climate
+    max_setpoint:
+      name: Setpoint limit
+      description: Act only if the setpoint of the checked entity is below this value.
+      default: 20
+      selector:
+        number:
+          min: 5
+          max: 30
+          step: 0.5
+          unit_of_measurement: °C
+          mode: box
+    target_climates:
+      name: Climate entities to heat
+      description: All climate entities that should receive the new target temperature.
+      selector:
+        entity:
+          domain: climate
+          multiple: true
+    target_temperature:
+      name: Target temperature
+      default: 21.5
+      selector:
+        number:
+          min: 5
+          max: 30
+          step: 0.5
+          unit_of_measurement: °C
+          mode: box
+
+mode: single
+
+triggers:
+  - trigger: numeric_state
+    entity_id: !input power_sensor
+    above: !input power_threshold
+    for: !input power_duration
+
+conditions:
+  - condition: time
+    after: !input start_time
+    before: !input end_time
+  - condition: numeric_state
+    entity_id: !input check_climate
+    attribute: temperature
+    below: !input max_setpoint
+
+actions:
+  - action: climate.set_temperature
+    target:
+      entity_id: !input target_climates
+    data:
+      temperature: !input target_temperature
