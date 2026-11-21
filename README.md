@@ -18,3 +18,11 @@ Home Assistant blueprints
     outside, a notification is sent, followed by repeat reminders with action
     buttons (turn heating back on / snooze). Notifications are dismissed when
     the window closes.
+
+<br>
+<b>Heating - Home Office detection via PC power.yaml</b>
+
+    Detects that a PC is in use (power draw stays above a threshold) and
+    raises the target temperature of one or more climate entities, but only
+    within a time window and only if the room's current setpoint is below a
+    limit.
