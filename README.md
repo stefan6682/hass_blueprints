@@ -3,6 +3,14 @@ Home Assistant blueprints
 
 
 <br>
+<b>Heating - Home Office detection via PC power.yaml</b>
+
+    Detects that a PC is in use (power draw stays above a threshold) and
+    raises the target temperature of one or more climate entities, but only
+    within a time window and only if the room's current setpoint is below a
+    limit.
+
+<br>
 <b>Window_open_and_Heating_Protection.yaml</b>
 
     Turns off thermostat(s) when a window is opened or tilted and restores their
@@ -19,10 +27,3 @@ Home Assistant blueprints
     buttons (turn heating back on / snooze). Notifications are dismissed when
     the window closes.
 
-<br>
-<b>Heating - Home Office detection via PC power.yaml</b>
-
-    Detects that a PC is in use (power draw stays above a threshold) and
-    raises the target temperature of one or more climate entities, but only
-    within a time window and only if the room's current setpoint is below a
-    limit.
